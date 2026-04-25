@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DocSafe">
+    
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/1067/1067357.png">
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/1067/1067357.png">
+    
+    <title>DocSafe 🛡️ Menorca Cloud</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
+    
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+
+    <style>
+        [x-cloak] { display: none !important; }
+        body { background-color: #0f172a; color: #f1f5f9; font-family: sans-serif; overflow-x: hidden; }
+        .card-doc { background: #1e293b; border-radius: 1.2rem; border: 1px solid #334155; }
+        .expiry-warning { border-left: 5px solid #ef4444; background: #450a0a; }
+        .nomina-style { border-left: 5px solid #22c55e; }
+        input, select { background: #1e293b !important; border: 1px solid #334155 !important; color: white !important; }
+        .loading-overlay { background: rgba(15, 23, 42, 0.95); backdrop-blur: 10px; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body x-data="docApp()" x-init="init()" class="pb-20">
+
+    <div x-show="loading" class="fixed inset-0 z-[100] loading-overlay flex flex-col items-center justify-center p-6 text-center" x-transition>
+        <div class="relative flex items-center justify-center mb-6">
+            <div class="animate-spin rounded-full h-20 w-20 border-t-4 border-b-4 border-blue-500"></div>
+            <span class="absolute material-symbols-outlined text-3xl text-blue-500">shield</span>
+        </div>
+        <p class="text-sm font-bold text-blue-400 uppercase tracking-widest mb-2" x-text="statusMsg"></p>
+        <div class="w-48 bg-slate-800 h-1.5 rounded-full overflow-hidden mb-6">
+            <div class="bg-blue-500 h-full transition-all duration-300" :style="`width: ${progress}%`"></div>
+        </div>
+        <button @click="loading = false" class="px-6 py-2 bg-red-500/20 text-red-400 text-[10px] font-bold rounded-xl uppercase border border-red-500/30">Cancelar</button>
+    </div>
+
+    <header class="p-6 flex justify-between items-center bg-slate-900/80 backdrop-blur-md sticky top-0 z-10 border-b border-white/5">
+        <div>
+            <div class="flex items-center gap-2">
+                <h1 class="text-2xl font-black tracking-tighter">DocSafe</h1>
+                <span class="material-symbols-outlined text-blue-500 text-2xl">shield</span>
+            </div>
+            <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Nube Privada Menorca</p>
+        </div>
+        <div class="flex gap-2">
+            <div class="text-right mr-2 hidden sm:block">
+                <p class="text-[9px] font-bold text-sky-500 uppercase" x-text="cloudStatus"></p>
+            </div>
+            <button @click="showEditor = !showEditor" class="bg-blue-600 p-3 rounded-2xl shadow-xl active:scale-90 transition-transform">
+                <span class="material-symbols-outlined text-white font-bold" x-text="showEditor ? 'close' : 'add_circle'"></span>
+            </button>
+        </div>
+    </header>
+
+    <main class="p-4 space-y-6">
+        <section x-show="showEditor" x-transition x-cloak class="card-doc p-5 space-y-4 shadow-2xl border-blue-500/30">
+            <div class="flex justify-between items-center">
+                <h2 class="text-sm font-black text-blue-400 uppercase">Añadir Documento</h2>
+                <span class="text-[10px] text-slate-500" x-text="nuevo.esPDF ? 'Modo PDF' : 'Modo Imagen'"></span>
+            </div>
+            <div class="space-y-3">
+                <input type="text" x-model="nuevo.nombre" placeholder="Nombre (ej: Nomina Marzo)" class="w-full p-4 rounded-xl text-sm outline-none">
+                <select x-model="nuevo.categoria" class="w-full p-4 rounded-xl text-sm outline-none">
+                    <template x-for="cat in categorias.filter(c => c !== 'TODOS')">
+                        <option :value="cat" x-text="cat"></option>
+                    </template>
+                </select>
+                <div class="flex flex-col gap-1">
+                    <label class="text-[10px] font-bold text-slate-500 ml-2 uppercase">Vencimiento / Fecha Doc</label>
+                    <input type="date" x-model="nuevo.fecha" class="w-full p-4 rounded-xl text-sm outline-none">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <button @click="$refs.camInput.click()" class="py-5 bg-blue-600 rounded-2xl font-black text-white uppercase text-[10px] flex flex-col items-center justify-center gap-2 shadow-lg shadow-blue-900/20">
+                        <span class="material-symbols-outlined text-2xl">camera_alt</span> Foto Cámara
+                    </button>
+                    <button @click="$refs.fileInput.click()" class="py-5 bg-slate-700 rounded-2xl font-black text-white uppercase text-[10px] flex flex-col items-center justify-center gap-2 border border-white/10">
+                        <span class="material-symbols-outlined text-2xl">description</span> Archivo PDF
+                    </button>
+                </div>
+                <input type="file" x-ref="camInput" class="hidden" accept="image/*" capture="environment" @change="prepararSubida($event, false)">
+                <input type="file" x-ref="fileInput" class="hidden" accept="image/*,application/pdf" @change="prepararSubida($event, null)">
+            </div>
+        </section>
+
+        <div class="flex gap-2 overflow-x-auto no-scrollbar py-2">
+            <template x-for="cat in categorias">
+                <button @click="filtro = cat" 
+                        :class="filtro === cat ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'bg-slate-800 text-slate-400 border border-white/5'"
+                        class="px-6 py-2 rounded-full text-[11px] font-black uppercase transition-all flex-shrink-0" x-text="cat"></button>
+            </template>
+        </div>
+
+        <div class="grid gap-3">
+            <template x-for="doc in docsFiltrados" :key="doc.id">
+                <div class="card-doc p-4 flex items-center justify-between active:bg-slate-800 transition-colors" 
+                     :class="{'expiry-warning': esCaducado(doc.fecha), 'nomina-style': doc.categoria === 'NÓMINAS'}">
+                    <div class="flex items-center gap-4 flex-grow cursor-pointer" @click="verDoc(doc)">
+                        <div class="p-3 rounded-2xl" :class="doc.esPDF ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'">
+                            <span class="material-symbols-outlined text-2xl" x-text="getIcon(doc.categoria, doc.esPDF)"></span>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-white text-sm" x-text="doc.nombre"></h3>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-black text-slate-500 uppercase" x-text="doc.categoria"></span>
+                                <span class="text-slate-700">•</span>
+                                <p class="text-[10px] font-bold" :class="esCaducado(doc.fecha) ? 'text-red-400' : 'text-slate-500'" x-text="doc.fecha ? formatDate(doc.fecha) : 'Sin fecha'"></p>
+                            </div>
+                        </div>
+                    </div>
+                    <button @click="borrar(doc)" class="text-slate-600 p-2 hover:text-red-400 transition-colors">
+                        <span class="material-symbols-outlined text-xl">delete</span>
+                    </button>
+                </div>
+            </template>
+            
+            <template x-if="docsFiltrados.length === 0">
+                <div class="py-20 text-center">
+                    <span class="material-symbols-outlined text-6xl text-slate-800 mb-4">folder_open</span>
+                    <p class="text-slate-500 text-sm font-bold uppercase tracking-widest">No hay documentos aquí</p>
+                </div>
+            </template>
+        </div>
+    </main>
+
+    <script>
+        // ==========================================
+        // 1. TUS CLAVES DE FIREBASE (PEGA AQUÍ)
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "TU_API_KEY",
+            authDomain: "TU_PROYECTO.firebaseapp.com",
+            projectId: "TU_PROYECTO_ID",
+            storageBucket: "TU_PROYECTO.appspot.com",
+            messagingSenderId: "TU_SENDER_ID",
+            appId: "TU_APP_ID"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const storage = firebase.storage();
+
+        function docApp() {
+            return {
+                showEditor: false, loading: false, statusMsg: '', progress: 0, cloudStatus: 'Offline',
+                filtro: 'TODOS', categorias: ['TODOS', 'PERSONALES', 'BUS', 'NÓMINAS', 'SALUD', 'OTROS'],
+                docs: [], nuevo: { nombre: '', categoria: 'PERSONALES', fecha: '', esPDF: false },
+                
+                init() {
+                    this.cloudStatus = 'Sincronizando...';
+                    db.collection("documentos").orderBy("createdAt", "desc").onSnapshot(snap => {
+                        this.docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                        this.cloudStatus = 'Nube Activa ✅';
+                    }, err => {
+                        this.cloudStatus = 'Error Nube ❌';
+                        console.error(err);
+                    });
+
+                    // Registrar Service Worker para PWA
+                    if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.register('./sw.js').catch(() => {});
+                    }
+                },
+
+                prepararSubida(event, isForcedPDF) {
+                    const file = event.target.files[0];
+                    if(!file) return;
+                    if(!this.nuevo.nombre) {
+                        alert("⚠️ Ponle un nombre al documento antes de subir el archivo");
+                        return;
+                    }
+                    
+                    const isPDF = isForcedPDF !== null ? isForcedPDF : (file.type === 'application/pdf');
+                    this.subirANube(file, isPDF);
+                },
+
+                async subirANube(file, esPDF) {
+                    this.loading = true;
+                    this.progress = 0;
+                    this.statusMsg = "Protegiendo archivo...";
+
+                    const fileName = `${Date.now()}_${this.nuevo.nombre.replace(/\s+/g, '_')}`;
+                    const storageRef = storage.ref(`docsafe_vault/${fileName}`);
+                    
+                    try {
+                        const uploadTask = storageRef.put(file);
+                        
+                        uploadTask.on('state_changed', 
+                            (snap) => {
+                                this.progress = (snap.bytesTransferred / snap.totalBytes) * 100;
+                                this.statusMsg = `Subiendo: ${Math.round(this.progress)}%`;
+                            }, 
+                            (err) => { throw err; }
+                        );
+
+                        await uploadTask;
+                        const fileUrl = await storageRef.getDownloadURL();
+                        
+                        await db.collection("documentos").add({
+                            nombre: this.nuevo.nombre,
+                            categoria: this.nuevo.categoria,
+                            fecha: this.nuevo.fecha,
+                            url: fileUrl,
+                            esPDF: esPDF,
+                            fileName: fileName,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+
+                        this.nuevo = { nombre: '', categoria: 'PERSONALES', fecha: '', esPDF: false };
+                        this.showEditor = false;
+                        this.loading = false;
+                        alert("🛡️ Documento guardado en la nube");
+                    } catch (e) {
+                        console.error(e);
+                        alert("❌ Error: " + e.message);
+                        this.loading = false;
+                    }
+                },
+
+                async borrar(doc) {
+                    if(confirm("¿Seguro que quieres eliminar este documento de la nube?")) {
+                        try {
+                            // Borrar archivo físico del Storage
+                            if(doc.fileName) {
+                                await storage.ref(`docsafe_vault/${doc.fileName}`).delete();
+                            }
+                            // Borrar registro de la base de datos
+                            await db.collection("documentos").doc(doc.id).delete();
+                        } catch(e) { 
+                            // Si el archivo no existe en storage, borramos al menos el registro
+                            await db.collection("documentos").doc(doc.id).delete();
+                        }
+                    }
+                },
+
+                verDoc(doc) {
+                    window.open(doc.url, '_blank');
+                },
+
+                formatDate(f) { 
+                    if(!f) return '';
+                    const [year, month, day] = f.split('-');
+                    return `${day}/${month}/${year}`;
+                },
+
+                get docsFiltrados() {
+                    let filtrados = this.filtro === 'TODOS' ? this.docs : this.docs.filter(d => d.categoria === this.filtro);
+                    return filtrados;
+                },
+
+                esCaducado(f) {
+                    if(!f || this.filtro === 'NÓMINAS') return false;
+                    const hoy = new Date();
+                    hoy.setHours(0,0,0,0);
+                    return new Date(f) < hoy;
+                },
+
+                getIcon(cat, pdf) {
+                    if(pdf) return 'picture_as_pdf';
+                    switch(cat) {
+                        case 'BUS': return 'directions_bus';
+                        case 'SALUD': return 'medical_services';
+                        case 'PERSONALES': return 'badge';
+                        case 'NÓMINAS': return 'payments';
+                        default: return 'description';
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
